@@ -34,11 +34,9 @@ class LSTMTrainer:
         os.makedirs(self.results_dir, exist_ok=True)
 
     def load_dataset(self, station_id: str) -> Tuple[torch.Tensor, torch.Tensor]:
-        path = f"preprocessed_data/{self.preprocess_method}/{station_id}.csv"
-        df = pd.read_csv(path)
-        features = df.drop(columns=["datetime", "discharge"]).values
-        targets = df["discharge"].values
-        return torch.FloatTensor(features), torch.FloatTensor(targets)
+        from data_loader.dataloader import DataLoader
+        loader = DataLoader(self.preprocess_method)
+        return loader.load_station_data(station_id)
 
     def train_model(self, model: LSTMModel, train_loader: DataLoader, 
                    val_loader: DataLoader, params: Dict) -> Dict:
@@ -82,7 +80,10 @@ class LSTMTrainer:
 
     def kfold_train(self, station_id: str, params: Dict, 
                    n_splits: int = 5) -> List[Dict]:
-        X, y = self.load_dataset(station_id)
+        from data_loader.dataloader import DataLoader
+        loader = DataLoader(self.preprocess_method)
+        X, y = loader.load_station_data(station_id)
+        X, y = loader.create_sequences(X, params["sequence_length"])
         kfold = KFold(n_splits=n_splits, shuffle=True)
         results = []
         
