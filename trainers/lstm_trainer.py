@@ -37,7 +37,7 @@ class LSTMModel(nn.Module):
         return out.squeeze(-1)  # Remove last dimension to match target shape
 
 class LSTMTrainer:
-    def __init__(self, preprocess_method: str = "z_score"):
+    def __init__(self, preprocess_method: str = "raw"):
         self.preprocess_method = preprocess_method
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.results_dir = os.path.join("results", "lstm")
@@ -68,6 +68,14 @@ class LSTMTrainer:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
+
+                # Debug print for first sample in batch
+                if batch_idx == 1 and epoch % 5 == 0:  # Print every 5 epochs
+                    print(f"\n[Debug] Epoch {epoch+1} Batch {batch_idx}")
+                    print("Inputs (first sample):", inputs[0].cpu().detach().numpy().round(4))
+                    print("Predictions:", outputs[:5].cpu().detach().numpy().round(4)) 
+                    print("Labels:", labels[:5].cpu().detach().numpy().round(4))
+                    print(f"Loss: {loss.item():.6f}\n")
                 
                 # Calculate training speed metrics
                 batch_time = time.time() - epoch_start_time
@@ -141,7 +149,7 @@ class LSTMTrainer:
             val_loader = create_data_loader(val_subset, params["batch_size"], shuffle=False)
             
             model = LSTMModel(
-                input_size=dataset[0][0].shape[-1],
+                input_size=dataset[0][0].shape[-1],  # 自动适配原始数据特征维度
                 hidden_size=params["hidden_size"],
                 num_layers=params["num_layers"]
             )

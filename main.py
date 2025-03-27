@@ -1,36 +1,49 @@
 from trainers import LSTMTrainer
 from visualization import visualization as viz
-from data_loader.dataloader import DataLoader
 import torch
+import argparse
 
-if __name__ == "__main__":
-    # Example configuration
-    station_ids = ["01013500", "01022500", "01030500"]  # 可修改需要分析的站点列表
+def main():
+    # Configure command line arguments
+    parser = argparse.ArgumentParser(description='LSTM Model Training')
+    parser.add_argument('--preprocess', type=str, default='raw',
+                        choices=['raw', 'min_max', 'z_score', 'decimal_scaling'],
+                        help='Preprocessing method (default: raw)')
+    parser.add_argument('--station', type=str, required=True,
+                        help='Station ID (e.g. 01013500)')
+    parser.add_argument('--sequence_length', type=int, default=30,
+                        help='Sequence length (default: 30)')
+    
+    args = parser.parse_args()
+
+    # Parameter grid configuration
     param_grid = {
         "hidden_size": [64, 128],
         "num_layers": [2, 3],
         "learning_rate": [1e-3, 1e-4],
         "batch_size": [32, 64],
         "epochs": [100],
-        "sequence_length": [30]
+        "sequence_length": [args.sequence_length]
     }
 
     try:
         # Initialize and run trainer
-        trainer = LSTMTrainer(preprocess_method="z_score")
-        for station_id in station_ids:
-            grid_results = trainer.grid_search(station_id, param_grid)
-            
-            # Visualize results
-            output_dir = f"results/lstm/{station_id}"
-            viz.plot_training_times([r for r in grid_results], param_grid, output_dir)
-            viz.visualize_grid_search(grid_results, output_dir)
+        trainer = LSTMTrainer(preprocess_method=args.preprocess)
+        results = trainer.grid_search(args.station, param_grid)
         
-        print("Training completed successfully. Check results/lstm directory for outputs.")
+        # Save and visualize results
+        output_dir = f"results/lstm/{args.station}"
+        viz.plot_training_times(results, param_grid, output_dir)
+        viz.visualize_grid_search(results, output_dir)
         
+        print(f"Training completed. Results saved to {output_dir}")
+
     except FileNotFoundError as e:
-        print(f"Data loading failed: {str(e)}")
+        print(f"Data error: {str(e)}")
     except torch.cuda.OutOfMemoryError:
-        print("CUDA out of memory - Try reducing batch size or sequence length")
+        print("GPU memory error - Reduce batch size or sequence length")
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
+        print(f"Error: {str(e)}")
+
+if __name__ == "__main__":
+    main()
