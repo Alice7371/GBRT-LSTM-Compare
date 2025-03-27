@@ -5,7 +5,7 @@ import torch
 
 if __name__ == "__main__":
     # Example configuration
-    station_id = "01013500"
+    station_ids = ["01013500", "01022500", "01030500"]  # 可修改需要分析的站点列表
     param_grid = {
         "hidden_size": [64, 128],
         "num_layers": [2, 3],
@@ -18,11 +18,13 @@ if __name__ == "__main__":
     try:
         # Initialize and run trainer
         trainer = LSTMTrainer(preprocess_method="z_score")
-        grid_results = trainer.grid_search(station_id, param_grid)
-        
-        # Visualize results
-        viz.plot_training_times([r for r in grid_results], param_grid, "results/lstm")
-        viz.visualize_grid_search(grid_results, "results/lstm")
+        for station_id in station_ids:
+            grid_results = trainer.grid_search(station_id, param_grid)
+            
+            # Visualize results
+            output_dir = f"results/lstm/{station_id}"
+            viz.plot_training_times([r for r in grid_results], param_grid, output_dir)
+            viz.visualize_grid_search(grid_results, output_dir)
         
         print("Training completed successfully. Check results/lstm directory for outputs.")
         
