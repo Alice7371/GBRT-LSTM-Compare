@@ -1,0 +1,264 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{xcolor}
+
+\title{Autoregressive Streamflow Forecasting across 1--180 Day Horizons:
+Predictability Decay, Cross-Basin Pooling, and External Memory\\[6pt]
+\large A 669-basin CAMELS study of XGBoost and LSTM model families}
+\author{Alice7371}
+\date{October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Deep-learning rainfall--runoff research on CAMELS basins evaluates
+almost exclusively forcing-only, single-step simulation. Operational
+forecasting, however, is \emph{autoregressive}: past discharge is available as
+input. We benchmark per-basin and pooled (regionally trained) XGBoost and LSTM
+variants on 669 CAMELS basins (1990--2009) under an autoregressive,
+leakage-safe protocol at lead times $h \in \{1,3,7,10,15,30,90,180\}$ days,
+anchored by persistence and day-of-year climatology baselines. We map the full
+predictability decay curve, test whether regional training dominates
+per-basin calibration (Kratzert et al., 2024) in this protocol, and quantify
+how feature engineering and data augmentation act as \emph{external memory}
+for stateless tree ensembles. [RESULTS PLACEHOLDER -- final numbers to be
+inserted after the experiment queue completes.]
+\end{abstract}
+
+\section{Introduction}
+Reliable streamflow prediction underpins flood early warning, reservoir
+operation, and water-supply planning. The task spans three regimes with
+distinct information sources: \emph{short-range} forecasting (1--7 days),
+where catchment storage makes discharge strongly autocorrelated;
+\emph{medium-range} forecasting (10--30 days), where skill must be extracted
+from slow storage anomalies; and \emph{seasonal} prediction (90--180 days),
+where predictability rests almost entirely on initial states --- chiefly
+snowpack and groundwater --- plus climatology. Most machine-learning hydrology
+research addresses only the first regime; how model skill decays across the
+full spectrum, and whether that decay is climate-dependent, remains unmapped.
+
+Two modeling paradigms dominate data-driven hydrology. Gradient-boosted tree
+ensembles are stateless function approximators whose temporal competence must
+be supplied externally, through windowed inputs or engineered lag/state
+features. Long Short-Term Memory (LSTM) networks carry state internally and
+can, in principle, learn storage--discharge dynamics themselves. Whether the
+second paradigm's structural advantage grows, shrinks, or inverts as the
+forecast horizon extends --- and whether cross-basin training changes this
+balance --- is an open empirical question with direct practical consequences.
+
+\section{Background and Related Work}
+\subsection{Large-sample hydrology and CAMELS}
+The CAMELS dataset \citep{newman2015} established the standard testbed for
+data-driven rainfall--runoff research, extended globally by Caravan
+\citep{kratzert2023} and critically assessed by \citet{clerc2024}. Calibrated
+outputs of process models accompany the dataset; the lumped conceptual model
+GR4J \citep{perrin2003} remains a widely used parsimonious baseline.
+
+\subsection{Deep learning rainfall--runoff}
+\citet{kratzert2018} showed a single LSTM trained across hundreds of CAMELS
+basins outperforms calibrated conceptual models; catchment-aware variants
+\citep{kratzert2019} generalize further, and \citet{kratzert2024} demonstrated
+that regional training dominates per-basin calibration even with long records.
+\citet{gauch2021} benchmarked trees against LSTMs under varying data volume;
+\citet{frame2022} addressed extremes; \citet{schoppa2020} characterized random
+forests in large-sample hydrology.
+
+\subsection{Operational multi-horizon forecasting}
+Google's global flood system extended reliable lead times to 7 days
+\citep{nearing2024}. \citet{hunt2022} showed LSTM skill persists to
+$\sim$10 days; beyond that, studies report steep degradation \citep{li2023,
+islam2025}. Seasonal prediction is traditionally served by physically-based
+procedures; observational work on storage--discharge dynamics
+\citep{kirchner2009} explains why initial storage carries multi-month memory
+in snow-dominated catchments. No existing work traces a single framework
+across the full 1--180 day range.
+
+\subsection{The gap}
+(i) The CAMELS line evaluates almost exclusively forcing-only, single-step
+simulation; the autoregressive protocol is rarely benchmarked at scale.
+(ii) Whether regional$>$local transfers to autoregressive forecasting, and
+whether stateless trees benefit from pooling differently than recurrent
+networks, is untested. (iii) Feature engineering and data augmentation act as
+external memory for stateless models; no study quantifies how their value
+interacts with pooling and horizon.
+
+\section{Data and Task Definition}
+\label{sec:data}
+669 CAMELS basins (671 minus two with NaN/inf records), 1990-01-01 to
+2009-12-31; seven daily drivers (daylength, precipitation, shortwave
+radiation, max/min temperature, vapor pressure, discharge). Chronological
+80/20 split per basin (train $\approx$ 1990--2005.9, test 2005.10--2009);
+normalization statistics fitted on the train segment only.
+
+\textbf{Task.} Direct multi-horizon forecasting: inputs use only data up to
+day $t$; the target is discharge at day $t+h$, $h \in \{1,3,7,10,15,30,90,180\}$.
+Input window $w(h)$: 15 ($h{\le}7$), 60 ($h{\in}\{10,15\}$), 90 ($h{=}30$),
+270 ($h{\in}\{90,180\}$). No recursion, no future forcing. Baselines:
+persistence (reported $h{\le}7$) and day-of-year climatology (training-period
+doy mean, 11-day centered smoothing, reported at all $h$).
+
+\section{Models}
+\subsection{Per-basin family}
+XGBoost on flattened raw windows (\texttt{xgb-raw}) or engineered same-day
+feature vectors (\texttt{xgb-fe}: lags, antecedent precipitation indices,
+rolling sums, snow/energy proxies, seasonality harmonics, discharge memory);
+LSTM (hidden 64, 2 layers, SmoothL1, Adam, StepLR) with Z-Score or Min-Max
+per-basin normalization; \texttt{-fe} variants append engineered state
+channels; \texttt{-fe-long} adds 90-day memory channels for $h \ge 30$.
+
+\subsection{Pooled family}
+One shared model trained on all basins' train segments (test segments held
+out basin-wide): \texttt{pooled-plain} (no station identifier),
+\texttt{pooled-emb} (+learned 16-dim station embedding broadcast to every
+timestep), \texttt{pooled-emb-fe}, and XGBoost with station integer code as a
+split feature. Note: embeddings encode learned per-basin capacity, not
+physical attributes (the CAMELS attributes file is outside our data package).
+
+\subsection{Physics reference}
+GR4J \citep{perrin2003} with Oudin PET, differential-evolution calibration on
+the train segment (h=1 simulation mode), as a research replication; CAMELS
+official calibrated model outputs serve as the literature reference.
+
+\section{Experimental Design}
+[TUNING/AUGMENTATION/METRICS/STATISTICS -- carried from docs/BACKGROUND.md
+sections 5--6; Optuna TPE search protocol; bootstrap 95\% CIs, BH-FDR,
+rank-biserial and Cohen's $d$.]
+
+\section{Results}
+
+\begin{table}[t]
+\centering\small
+\caption{Predictability decay (median NSE; h$\le$15: 669 basins, h=30: 335,
+h=90/180: 34 stratified basins).}
+\label{tab:decay}
+\begin{tabular}{lcccccccc}
+\toprule
+Track & h=1 & h=3 & h=7 & h=10 & h=15 & h=30 & h=90 & h=180 \\
+\midrule
+persistence & 0.494 & $-$0.148 & $-$0.465 & $-$0.545 & $-$0.603 & $-$0.751 & $-$1.071 & $-$1.173 \\
+climatology & -- & -- & -- & 0.019 & 0.019 & 0.018 & 0.037 & 0.061 \\
+xgb-fe & 0.583 & 0.190 & 0.088 & 0.067 & 0.056 & 0.032 & 0.012 & 0.019 \\
+\textbf{lstm-raw-zscore} & 0.609 & 0.253 &  \textbf{0.151} & \textbf{0.133} & \textbf{0.113} & \textbf{0.074} & \textbf{0.032} & \textbf{0.046} \\
+lstm-pooled-emb & \textbf{0.646} & \textbf{0.269} & 0.150 & 0.098 & 0.066 & 0.018 & 0.014 & $-$0.001 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering\small
+\caption{Pooling reversal (paired per-basin; FDR-significant where marked).}
+\label{tab:pooling}
+\begin{tabular}{lcccc}
+\toprule
+h & median $\Delta$NSE & wins & Cohen's $d$ & FDR \\
+\midrule
+1 & $+$0.028 & 589/669 & 0.83 & yes \\
+3 & $+$0.009 & 502/669 & 0.36 & yes \\
+7 & $+$0.004 & 417/669 & 0.00 & yes \\
+10 & $-$0.013 & 214/669 & $-$0.30 & no \\
+15 & $-$0.026 & 166/669 & $-$0.43 & no \\
+30 & $-$0.037 & 85/335 & $-$0.31 & no \\
+90 & $-$0.018 & -- & -- & no \\
+180 & $-$0.047 & -- & -- & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering\small
+\caption{State--capacity axis (335-basin subset).}
+\label{tab:state}
+\begin{tabular}{lccc}
+\toprule
+Track & h=1 & h=7 & h=30 \\
+\midrule
+mlp-zscore & 0.626 & 0.136 & $-$0.014 \\
+attn-zscore & 0.587 & 0.138 & 0.076 \\
+gru-zscore & 0.618 & 0.150 & 0.079 \\
+lstm-raw-zscore & 0.609 & 0.151 & 0.074 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Finding 1 (decay + cliff).} Median-basin skill is nearly exhausted by
+h=30 (LSTM 0.074), yet 307 snow-dominated basins retain NSE $\approx$ 0.10 at
+h=180 --- indistinguishable from day-of-year climatology (0.103) --- while
+rain basins collapse to $\approx$0.02. Seasonal predictability is initial
+snowpack memory, and its limit is climate-type-dependent.
+
+\textbf{Finding 2 (pooling reversal).} Pooled LSTM beats per-basin at h=1
+(589/669, $d$=0.83, FDR-sig), ties at h=7, and loses from h=10 onward,
+deepening to $-$0.047 at h=180. Pooled XGBoost is worse at every horizon and
+collapses at seasonal horizons ($-$0.18 at h=180). Cross-basin training
+transfers universal short-range dynamics, not basin-specific long-range
+storage behavior.
+
+\textbf{Finding 3 (state--capacity).} A stateless MLP matches LSTM at h=1 and
+collapses by h=30; GRU $\approx$ LSTM; attention tracks LSTM through
+mid-range. Recurrent state is the load-bearing structure exactly where the
+window stops being sufficient.
+
+\textbf{Finding 4 (external memory is a no-op).} Feature engineering shows no
+paired gain at any horizon (all FDR n.s.), including 90-day memory channels;
+augmentation and 1.0$\sigma$ test-noise probes move NSE $<$0.01 --- the
+discharge channel dominates the input information.
+
+\textbf{Finding 5 (normalization + tuning).} Z-Score beats Min-Max on
+669/669 basins (median $\Delta$NSE $+$0.29); Optuna tuning adds $+$0.03.
+The largest levers in this protocol are trivial choices, not architecture.
+
+\section{Discussion and Limitations}
+[To write after results.]
+
+\section{Conclusion}
+[To write after results.]
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{20}
+\bibitem[Clerc-Schwarzenbach et al.(2024)]{clerc2024} Clerc-Schwarzenbach, F.,
+  et al. (2024). Large-sample hydrology --- a few camels or a whole caravan?
+  \emph{HESS}, 28, 4219.
+\bibitem[Frame et al.(2022)]{frame2022} Frame, J., et al. (2022). Deep
+  learning rainfall--runoff predictions of extreme events. \emph{HESS}.
+\bibitem[Gauch et al.(2021)]{gauch2021} Gauch, M., et al. (2021). The proper
+  care and feeding of CAMELS: How limited training data affects streamflow
+  prediction. arXiv:1911.07249.
+\bibitem[Hunt et al.(2022)]{hunt2022} Hunt, E., et al. (2022). Using an LSTM
+  to generate medium-range flood scenarios. \emph{HESS}, 26, 5449.
+\bibitem[Islam et al.(2025)]{islam2025} Islam, M., et al. (2025). From short
+  to long-term horizons. \emph{Results in Engineering}.
+\bibitem[Kirchner(2009)]{kirchner2009} Kirchner, J. (2009). Catchments as
+  simple dynamical systems. \emph{WRR}, 45, W02429.
+\bibitem[Kratzert et al.(2018)]{kratzert2018} Kratzert, F., et al. (2018).
+  Rainfall--runoff modelling using LSTM networks. \emph{HESS}, 22, 6005.
+\bibitem[Kratzert et al.(2019)]{kratzert2019} Kratzert, F., et al. (2019).
+  Towards learning universal, regional, and local hydrological behaviors.
+  \emph{HESS}, 23, 5089.
+\bibitem[Kratzert et al.(2023)]{kratzert2023} Kratzert, F., et al. (2023).
+  Caravan --- a global community dataset for large-sample hydrology.
+  \emph{ESSD}, 15.
+\bibitem[Kratzert et al.(2024)]{kratzert2024} Kratzert, F., et al. (2024).
+  Never train an LSTM on a single basin. \emph{HESS}, 28, 4187.
+\bibitem[Li et al.(2023)]{li2023} Li, Z., et al. (2023). Cascade LSTM daily
+  streamflow forecasts. \emph{Hydrology}, 15(6), 1019.
+\bibitem[Nearing et al.(2024)]{nearing2024} Nearing, G., et al. (2024).
+  Global prediction of extreme floods in ungauged watersheds. \emph{Nature},
+  627, 559.
+\bibitem[Newman et al.(2015)]{newman2015} Newman, A., et al. (2015).
+  Development and characterization of a continental-scale daily watershed
+  model and water-balance dataset. \emph{J. Hydrometeorology}, 16.
+\bibitem[Perrin et al.(2003)]{perrin2003} Perrin, C., et al. (2003).
+  Improvement of a parsimonious model for streamflow simulation. \emph{J.
+  Hydrol.}, 279, 275.
+\bibitem[Schoppa et al.(2020)]{schoppa2020} Schoppa, A., et al. (2020).
+  Evaluating the performance of random forest for large-sample hydrology.
+  \emph{J. Hydrol.}, 588.
+\end{thebibliography}
+
+\end{document}

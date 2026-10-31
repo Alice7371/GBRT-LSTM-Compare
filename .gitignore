@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.idea/
+venv/
+
+# generated results & full dataset (not committed)
+results/
+data_full/
+study_results/
+
+# official CAMELS downloads: zip is 4GB, never commit
+data_official/modelOutput_daymet*
+data_official/modelOutput_daymet/
