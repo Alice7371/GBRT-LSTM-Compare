@@ -213,6 +213,14 @@ discharge channel dominates the input information.
 669/669 basins (median $\Delta$NSE $+$0.29); Optuna tuning adds $+$0.03.
 The largest levers in this protocol are trivial choices, not architecture.
 
+\textbf{Physics reference.} The official NWS HL-RMS calibrations (snow-aware,
+Daymet forcing), evaluated under our protocol with train-only variant
+selection (438 gauges), reach median NSE $0.649$ at $h{=}1$ (snow
+$0.633$ / rain $0.672$) --- the strong simulation anchor that our
+GR4J replication (no snow module, $-0.30$) falls short of. HL-RMS is a
+forcing-only simulation; the comparison with our autoregressive forecasts is
+indicative, not protocol-matched.
+
 \section{Discussion and Limitations}
 [To write after results.]
 
